@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RSS Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .tab { display: none; }
+        .active { display: block; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .preview-btn {
+            cursor: pointer;
+            color: blue;
+            text-decoration: underline;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 999;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fff;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 70%;
+        }
+        .close {
+            float: right;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        select, input, button {
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div>
+    <button onclick="showTab('news')">Новости</button>
+    <button onclick="showTab('feeds')">RSS-ленты</button>
+    <button onclick="showTab('keywords')">Ключевые слова</button>
+</div>
+
+<!-- Вкладка новостей -->
+<div id="news" class="tab active">
+    <h2>Последние новости</h2>
+    <div>
+        Показывать на странице:
+        <select id="perPage" onchange="loadData()">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+        </select>
+        Фильтр по ключевому слову:
+        <input id="keywordFilter" placeholder="ключевое слово" oninput="this.value=this.value.toLowerCase(); loadData()">
+        Тип фильтра:
+        <select id="filterType" onchange="loadData()">
+            <option value="title">В заголовке</option>
+            <option value="keywords">В ключевых словах</option>
+        </select>
+    </div>
+    <table id="news-table">
+        <thead>
+            <tr>
+                <th>Источник</th>
+                <th>Заголовок</th>
+                <th>Дата</th>
+                <th>Ключевые слова</th>
+                <th>Содержание</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div id="pagination"></div>
+</div>
+
+<!-- Модальное окно -->
+<div id="myModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h3 id="modalTitle"></h3>
+        <p><strong>Источник:</strong> <span id="modalSource"></span></p>
+        <p><strong>Дата публикации:</strong> <span id="modalDate"></span></p>
+        <p><strong>Ключевые слова:</strong> <span id="modalKeywords"></span></p>
+        <p><strong>Описание:</strong></p>
+        <div id="modalContent" style="white-space: pre-wrap;"></div>
+        <a id="modalLink" href="#" target="_blank">
+            <button style="margin-top: 10px;">Перейти на сайт</button>
+        </a>
+    </div>
+</div>
+
+<!-- Вкладка RSS-лент -->
+<div id="feeds" class="tab">
+    <h2>Управление RSS-лентами</h2>
+    <div>
+        <input id="feed-url" placeholder="URL RSS-ленты">
+        <input id="feed-name" placeholder="Название (необязательно)">
+        <button onclick="addFeed()">Добавить</button>
+    </div>
+    <table id="feeds-table">
+        <thead><tr><th>ID</th><th>URL</th><th>Название</th><th>Действия</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<!-- Вкладка ключевых слов -->
+<div id="keywords" class="tab">
+    <h2>Управление ключевыми словами</h2>
+    <div>
+        <input id="new-keyword" placeholder="Новое ключевое слово">
+        <button onclick="addKeyword()">Добавить</button>
+    </div>
+    <table id="keywords-table">
+        <thead><tr><th>ID</th><th>Ключевое слово</th><th>Действия</th></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<script>
+    let currentPage = 1;
+
+    function showTab(tabName) {
+        document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+        document.getElementById(tabName).classList.add('active');
+    }
+
+    async function loadData(page = 1) {
+        const perPage = parseInt(document.getElementById('perPage').value);
+        const keyword = document.getElementById('keywordFilter').value.trim();
+        const filterType = document.getElementById('filterType').value;
+
+        try {
+            // === Новости ===
+            const newsResponse = await fetch(`/api/news?page=${page}&per_page=${perPage}&keyword=${encodeURIComponent(keyword)}&filter_type=${filterType}`);
+            if (!newsResponse.ok) throw new Error("Ошибка загрузки новостей");
+            const newsData = await newsResponse.json();
+
+            const newsBody = document.querySelector('#news-table tbody');
+            if (newsData.news.length === 0) {
+                newsBody.innerHTML = `<tr><td colspan="5">Новости не найдены</td></tr>`;
+            } else {
+                newsBody.innerHTML = newsData.news.map(item => {
+                    const safeItem = encodeURIComponent(JSON.stringify(item));
+                    return `
+                        <tr>
+                            <td>${item.source || 'Неизвестный источник'}</td>
+                            <td>${item.title}</td>
+                            <td>${item.published_at ? new Date(item.published_at).toLocaleString() : '-'}</td>
+                            <td>${item.matched_keywords || '-'}</td>
+                            <td><span class="preview-btn" onclick="showModal('${safeItem}')">Показать</span></td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // === Пагинация ===
+            const totalPages = Math.ceil(newsData.total / perPage);
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i;
+                btn.onclick = () => loadData(i);
+                if (i === page) btn.disabled = true;
+                pagination.appendChild(btn);
+            }
+
+            // === Ленты ===
+            const feedsResponse = await fetch('/admin/feeds');
+            if (!feedsResponse.ok) throw new Error("Ошибка загрузки лент");
+            const feeds = await feedsResponse.json();
+            const feedsBody = document.querySelector('#feeds-table tbody');
+            feedsBody.innerHTML = feeds.map(feed => `
+                <tr>
+                    <td>${feed.id}</td>
+                    <td>${feed.url}</td>
+                    <td>${feed.name || ''}</td>
+                    <td><button onclick="deleteFeed(${feed.id})">Удалить</button></td>
+                </tr>
+            `).join('');
+
+            // === Ключевые слова ===
+            const keywordsResponse = await fetch('/admin/keywords');
+            if (!keywordsResponse.ok) throw new Error("Ошибка загрузки ключевых слов");
+            const keywords = await keywordsResponse.json();
+            const keywordsBody = document.querySelector('#keywords-table tbody');
+            keywordsBody.innerHTML = keywords.map(kw => `
+                <tr>
+                    <td>${kw.id}</td>
+                    <td>${kw.keyword}</td>
+                    <td><button onclick="deleteKeyword(${kw.id})">Удалить</button></td>
+                </tr>
+            `).join('');
+
+        } catch (e) {
+            console.error("Ошибка загрузки данных:", e);
+            alert("Ошибка загрузки данных. Проверьте сервер.");
+        }
+    }
+
+    function showModal(jsonString) {
+        const news = JSON.parse(jsonString);
+        document.getElementById('modalTitle').textContent = news.title;
+        document.getElementById('modalSource').textContent = news.source || 'Неизвестный';
+        document.getElementById('modalDate').textContent = news.published_at ? new Date(news.published_at).toLocaleString() : '-';
+        document.getElementById('modalKeywords').textContent = news.matched_keywords || 'Нет совпадений';
+        document.getElementById('modalContent').textContent = news.content;
+        document.getElementById('modalLink').href = news.link;
+        document.getElementById('myModal').style.display = 'block';
+    }
+
+    function closeModal() {
+        document.getElementById('myModal').style.display = 'none';
+    }
+
+    async function addFeed() {
+        const url = document.getElementById('feed-url').value.trim();
+        const name = document.getElementById('feed-name').value.trim();
+        if (!url) return alert("Введите URL ленты");
+
+        await fetch('/admin/feeds', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({url, name})
+        });
+        loadData();
+        document.getElementById('feed-url').value = '';
+        document.getElementById('feed-name').value = '';
+    }
+
+    async function deleteFeed(id) {
+        if (!confirm("Удалить эту ленту?")) return;
+        await fetch(`/admin/feeds?id=${id}`, {method: 'DELETE'});
+        loadData();
+    }
+
+    async function addKeyword() {
+        const keyword = document.getElementById('new-keyword').value.trim();
+        if (!keyword) return alert("Введите ключевое слово");
+
+        await fetch('/admin/keywords', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({keyword})
+        });
+        loadData();
+        document.getElementById('new-keyword').value = '';
+    }
+
+    async function deleteKeyword(id) {
+        if (!confirm("Удалить это ключевое слово?")) return;
+        await fetch(`/admin/keywords?id=${id}`, {method: 'DELETE'});
+        loadData();
+    }
+
+    // === Инициализация ===
+    loadData();
+    setInterval(loadData, 60000); // Обновлять каждую минуту
+</script>
+
+</body>
+</html>
