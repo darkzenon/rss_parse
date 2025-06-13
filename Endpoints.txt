@@ -1,0 +1,9 @@
+/ GET Главная страница с интерфейсом
+/admin/feeds GET Получить все RSS-ленты
+/admin/feeds POST Добавить новую ленту
+/admin/feeds?id=X DELETE Удалить ленту по ID
+/admin/keywords GET Получить список ключевых слов
+/admin/keywords POST Добавить ключевое слово
+/admin/keywords?id=X DELETE Удалить ключевое слово
+/api/news GET Получить новости с фильтрацией 
+/admin/parse_now GET Запустить парсинг вручную
